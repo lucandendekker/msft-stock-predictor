@@ -18,7 +18,7 @@ with gr.Blocks(title='MSFT Stock Predictor', fill_height=True) as demo:
 
 application = FastAPI()
 application.mount('/dashboard', WSGIMiddleware(dashboard))
-application = gr.mount_gradio_app(application, demo, path='/')
+application = gr.mount_gradio_app(application, demo, path='/', ssr_mode=False)
 
 if __name__ == '__main__':
     uvicorn.run(application, host=os.environ.get('HOST', '0.0.0.0'), port=int(os.environ.get('PORT', '7860')))
