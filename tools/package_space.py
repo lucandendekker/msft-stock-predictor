@@ -14,7 +14,8 @@ def package(destination):
     shutil.copytree(ROOT / 'dashboard', destination / 'dashboard', dirs_exist_ok=True,
                     ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
     (destination / 'requirements.txt').write_text((ROOT / 'requirements.txt').read_text() + '\ngradio==6.30.0\n', encoding='utf-8')
-    (destination / 'packages.txt').write_text('libgomp1\n', encoding='utf-8')
+    # apt/xargs treats a Windows carriage return as part of the package name.
+    (destination / 'packages.txt').write_bytes(b'libgomp1\n')
     (destination / 'README.md').write_text('''---
 title: MSFT Stock Predictor
 emoji: 📈
