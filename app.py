@@ -18,6 +18,19 @@ from contextlib import closing
 import sqlite3
 import json
 
+try:
+    import spaces
+except ImportError:
+    if os.environ.get('SPACES_ZERO_GPU', '').lower() in ('1', 'true'):
+        raise
+    class LocalSpaces:
+        @staticmethod
+        def GPU(**kwargs):
+            return lambda function: function
+    spaces = LocalSpaces()
+
+ZERO_GPU = os.environ.get('SPACES_ZERO_GPU', '').lower() in ('1', 'true')
+
 
 def gpu_weekly_prediction(features):
     """Execute the saved tree ensemble on an allocated CUDA device."""
@@ -39,12 +52,8 @@ def gpu_weekly_prediction(features):
     return predicted, float(values[predicted])
 
 
-if os.environ.get('SPACE_ID'):
-    import spaces
-    gpu_weekly_prediction = spaces.GPU(duration=30)(gpu_weekly_prediction)
-
-
-def refresh_forecast():
+def prepare_forecast():
+    """Fetch data and prepare small inputs before requesting GPU time."""
     state = live.ensure()
     if not state.get('data_through') or state.get('stale'):
         raise gr.Error('Current market data could not be refreshed. Please retry shortly.')
@@ -55,21 +64,32 @@ def refresh_forecast():
         raise gr.Error('The weekly model or completed-week data is unavailable.')
     row = features.iloc[[-1]]
     inputs = scaler.transform(row[columns])
-    if os.environ.get('SPACE_ID'):
-        direction, probability = gpu_weekly_prediction(inputs.tolist())
-    else:
-        direction = int(model.predict(inputs)[0])
-        probability = float(model.predict_proba(inputs)[0][direction])
     start = pd.Timestamp(row['date'].iloc[0]) + pd.Timedelta(days=3)
     end = start + pd.Timedelta(days=4)
+    return {'inputs': inputs.tolist(), 'week_start': str(start.date()), 'week_end': str(end.date()), 'data_through': state['data_through']}
+
+
+@spaces.GPU(duration=30)
+def show_forecast(prepared):
+    """A directly registered Gradio GPU event, not a nested GPU helper."""
+    if not prepared:
+        raise gr.Error('Market data is not ready. Press Update to retry.')
+    if ZERO_GPU:
+        direction, probability = gpu_weekly_prediction(prepared['inputs'])
+    else:
+        model, _, _, _ = load_model()
+        inputs = np.asarray(prepared['inputs'])
+        direction = int(model.predict(inputs)[0])
+        probability = float(model.predict_proba(inputs)[0][direction])
     label = {0: 'DOWN', 1: 'UP', 2: 'SAME'}[direction]
-    return f'**Weekly estimate: {label}** · Model probability: **{probability * 100:.1f}%** · Forecast week: {start.date()} to {end.date()} · Daily data through {state["data_through"]}.'
+    return f'**Weekly estimate: {label}** · Model probability: **{probability * 100:.1f}%** · Forecast week: {prepared["week_start"]} to {prepared["week_end"]} · Daily data through {prepared["data_through"]}.'
 
 with gr.Blocks(title='MSFT Stock Predictor', fill_height=True) as demo:
     refresh = gr.Button('Update market data & weekly forecast', variant='primary')
     forecast = gr.Markdown('Loading the latest available weekly estimate…')
-    refresh.click(refresh_forecast, outputs=forecast)
-    demo.load(refresh_forecast, outputs=forecast)
+    prepared = gr.State()
+    refresh.click(prepare_forecast, outputs=prepared).then(show_forecast, inputs=prepared, outputs=forecast)
+    demo.load(prepare_forecast, outputs=prepared).then(show_forecast, inputs=prepared, outputs=forecast)
     gr.HTML('''<iframe title="MSFT market dashboard" src="/dashboard/?theme=dark"
         style="display:block;width:100%;height:calc(100dvh - 40px);min-height:720px;border:0;background:#0b0d0d"
         allowfullscreen></iframe>''')
