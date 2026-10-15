@@ -2,6 +2,7 @@
 import argparse
 import json
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 import pandas as pd
 
@@ -40,7 +41,7 @@ def build(db_path=DB_PATH, refresh=False):
     metrics = json.loads(metadata.read_text(encoding="utf-8"))["test_metrics"]
     db_path = Path(db_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(db_path) as connection:
+    with closing(sqlite3.connect(db_path)) as connection, connection:
         for name, frame in tables.items():
             frame.to_sql(name, connection, if_exists="replace", index=False)
         pd.DataFrame([{"model": "XGBoost", **metrics}]).to_sql("model_metrics", connection, if_exists="replace", index=False)

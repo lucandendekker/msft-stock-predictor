@@ -2,7 +2,7 @@
 
 **A team project about managing a shared Data Science lifecycle, using stock-direction prediction as the technical challenge.**
 
-Developed by **Group 15** during **Year 1, Block D: Data Science Lifecycle Management** at Breda University of Applied Sciences. This portfolio copy is maintained by Lucan den Dekker. It is **group work**, not a solo application.
+Developed as a group project during **Year 1, Block D: Data Science Lifecycle Management** at Breda University of Applied Sciences. This portfolio copy is maintained by Lucan den Dekker. It is **group work**, not a solo application.
 
 ## What this project demonstrates
 
@@ -24,13 +24,26 @@ The project records identify my work on the presentation template, problem state
 
 Explore whether historical Microsoft (MSFT) data and peer-stock signals can classify the **following week's direction** as up, down or neutral. The final implementation uses weekly features and a three-class XGBoost model, with a Flask dashboard and SQLite storage. Earlier design documents describe a daily/binary task and Streamlit; they reflect an earlier stage, not the final implementation.
 
-![Historical MSFT data and group project overview](images/project-preview.svg)
+![Actual MSFT dashboard with historical data and saved model output](images/dashboard-screenshot.png)
 
 This is an **academic prototype**, not a trading system. Predictive performance was limited and close to simple baselines. The saved final-model metadata reports approximately **39.6% three-class accuracy** and **0.376 F1**. These are archived evaluation results, not a fresh evaluation or evidence of an investment advantage. The project is presented for the teamwork and engineering process, not for a claim to reliably predict markets.
 
+## Current-data dashboard and Hugging Face
+
+The Gradio entry point wraps the original dashboard and Python API. It fetches the latest available quote and refreshes completed market sessions and model output on access. Data status, quote time, input week and forecast week are displayed explicitly. The saved model is not automatically retrained.
+
+```sh
+python -m pip install -r requirements-gradio.txt
+python app.py
+```
+
+Open **http://localhost:7860**. Prepare the Space upload with `python tools/package_space.py --output upload`. See [Hugging Face deployment](docs/huggingface.md) for the Gradio/ZeroGPU package and limitations.
+
+The most recent completed input week predicts the following trading week's direction. It does not estimate tomorrow's price. Quote refreshes do not change that forecast horizon. The Space can be embedded in a Hostinger portfolio without running Python at Hostinger.
+
 ## Run the dashboard locally
 
-Use **Python 3.12**. No market-data downloads are needed for the default setup: the dashboard uses included historical snapshots.
+Use **Python 3.12**. The Flask server refreshes data automatically by default. Set `MSFT_AUTO_REFRESH=0` to use only the included historical snapshots and local setup below.
 
 ```sh
 python -m venv .venv
@@ -53,7 +66,9 @@ python dashboard/msft_forecaster/predict.py
 python dashboard/server.py
 ```
 
-Open **http://localhost:5002**. The displayed forecast is generated from the last eligible week in the historical snapshot. It is not a live forecast for the current date. Forecast probabilities are model outputs, not calibrated guarantees.
+Open **http://localhost:5002**. The market quote tile fetches the latest available MSFT quote from Yahoo Finance, includes the source timestamp and refreshes every minute while the page is visible. Market-data delays and closed sessions can mean the latest quote is older than the current time.
+
+Charts and model output still use the historical snapshot. The current quote does not turn that output into a live prediction. If the quote provider is unavailable, the interface shows an error or labels the last received quote as stale. Read the [data correction and quote notes](docs/data-correction.md).
 
 Alternatively:
 
@@ -61,7 +76,7 @@ Alternatively:
 docker compose up --build
 ```
 
-The Docker files are included, but this portfolio preparation was verified through the Python setup, not a Docker build.
+The Docker container serves on port 7860; Docker Compose maps it to localhost:5002. The included Docker configuration supports Hugging Face Spaces. Read the [deployment instructions](docs/huggingface.md) for the upload layout and validation limits.
 
 ## Optional data refresh
 

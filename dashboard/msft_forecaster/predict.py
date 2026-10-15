@@ -121,7 +121,11 @@ def build_features(conn: sqlite3.Connection, n_daily_rows: int = 400) -> pd.Data
             weekly[f"{peer}_rel_strength"] = 0.0
             weekly[f"{peer}_volume_ratio"] = 1.0
 
-    weekly = weekly[weekly.index < pd.Timestamp.now().normalize()]
+    now = pd.Timestamp.now(tz='America/New_York').tz_localize(None)
+    friday = now.normalize() - pd.Timedelta(days=(now.weekday() - 4) % 7)
+    if now.weekday() == 4 and now.hour * 60 + now.minute < 16 * 60 + 15:
+        friday -= pd.Timedelta(days=7)
+    weekly = weekly[weekly.index <= friday]
     return weekly.dropna().reset_index()
 
 

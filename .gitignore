@@ -8,3 +8,4 @@ db/
 *.db-journal
 .ipynb_checkpoints/
 *.log
+dist/

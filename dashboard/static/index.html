@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MSFT Predictor</title>
+  <title>MSFT Dashboard ? Lucan den Dekker</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 21 21'%3E%3Crect x='0' y='0' width='10' height='10' fill='%23F25022'/%3E%3Crect x='11' y='0' width='10' height='10' fill='%237FBA00'/%3E%3Crect x='0' y='11' width='10' height='10' fill='%2300A4EF'/%3E%3Crect x='11' y='11' width='10' height='10' fill='%23FFB900'/%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=28" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./static/style.css" />
 </head>
 <body>
 
@@ -41,6 +41,11 @@
       </button>
     </div>
   </header>
+
+  <aside class="portfolio-demo-note" aria-label="About this demo">
+    <strong>Academic group project</strong> · <span id="data-freshness">Loading current market data and weekly model output…</span>
+    <a href="https://github.com/lucandendekker/msft-stock-predictor" target="_blank" rel="noopener noreferrer">Project &amp; team credits ↗</a>
+  </aside>
 
   <!-- ── Settings panel ────────────────────────────────────────────────────── -->
   <div class="settings-overlay" id="settings-overlay">
@@ -148,7 +153,7 @@
         <div class="page-inner">
           <div class="page-hero">
             <h1 class="page-h1">Weekly Stock Direction Predictor</h1>
-            <p class="page-lead">Next-week directional prediction for MSFT powered by machine learning.</p>
+            <p class="page-lead">MSFT week-direction estimate from the latest completed weekly features.</p>
           </div>
 
           <div class="pred-card" id="pred-card">
@@ -179,14 +184,14 @@
 
           <div class="tiles-row">
             <div class="tile">
-              <div class="tile-label">Last Close Price</div>
+              <div class="tile-label">Latest MSFT market quote</div>
               <div class="tile-val tile-mono" id="tile-close">$–</div>
               <div class="tile-sub" id="tile-close-sub">–</div>
             </div>
             <div class="tile">
-              <div class="tile-label">Prediction Date</div>
+              <div class="tile-label">Feature week ending</div>
               <div class="tile-val" id="tile-pred-date">–</div>
-              <div class="tile-sub">Next trading week</div>
+              <div class="tile-sub" id="forecast-week-label">Loading forecast week…</div>
             </div>
             <div class="tile">
               <div class="tile-label">Model Used</div>
@@ -344,7 +349,7 @@
           <div class="section-head section-head-flex">
             <div>
               <div class="page-h1">Model Performance</div>
-              <div class="page-lead">XGBoost Weekly · 48 test weeks · Jun 2025 – May 2026</div>
+              <div class="page-lead">XGBoost Weekly; archived hold-out evaluation</div>
             </div>
             <div class="active-model-row" id="active-model-row">
               <span class="active-model-dot"></span>
@@ -362,12 +367,12 @@
             <div class="tile big-tile">
               <div class="tile-label">Precision</div>
               <div class="tile-val tile-val-big tile-mono" id="m-precision">0.4459</div>
-              <div class="tile-sub">Weighted avg precision</div>
+              <div class="tile-sub">Macro-averaged precision</div>
             </div>
             <div class="tile big-tile">
               <div class="tile-label">Recall</div>
               <div class="tile-val tile-val-big tile-mono" id="m-recall">0.3877</div>
-              <div class="tile-sub">Weighted avg recall</div>
+              <div class="tile-sub">Macro-averaged recall</div>
             </div>
             <div class="tile big-tile">
               <div class="tile-label">F1 Score</div>
@@ -379,15 +384,15 @@
           <div class="split-row">
             <div class="chart-block cm-block">
               <div class="chart-block-title">Confusion Matrix</div>
-              <div class="chart-block-sub" style="margin-bottom:8px">Predicted vs actual direction on held-out test set (48 weeks)</div>
-              <svg id="svg-confusion" viewBox="0 0 400 300" width="400" height="300"></svg>
+              <div class="chart-block-sub" style="margin-bottom:8px">Per-class results are not included in the saved model metadata.</div>
+              <p class="page-lead" style="padding-block:24px;line-height:1.7">The archived evaluation contains overall accuracy, precision, recall and F1. A verified confusion matrix is not available.</p>
               <div class="cm-legend">
-                <span>Diagonal = correct predictions</span>
+                <span>Only recorded evaluation metrics are displayed.</span>
               </div>
             </div>
             <div class="chart-block split-flex">
-              <div class="chart-block-title">Model Comparison · F1 Score</div>
-              <div class="chart-block-sub" style="margin-bottom:8px">XGBoost Weekly (highlighted) uses 20 peer features and 48 test weeks · Random Forest scores higher F1 but on only 32 weeks.</div>
+              <div class="chart-block-title">Archived model · Macro F1</div>
+              <div class="chart-block-sub" style="margin-bottom:8px">Score from the saved XGBoost evaluation metadata. Other model scores are omitted because their evaluation records are not included.</div>
               <svg id="svg-model-compare" viewBox="0 0 560 220" width="100%" height="220"></svg>
             </div>
           </div>
@@ -446,7 +451,7 @@
               <div class="pipeline-arrow">→</div>
               <div class="pipeline-box pipeline-box-accent"><div class="pipeline-step pipeline-step-accent">06 · Serve</div><div class="pipeline-name">Dashboard</div></div>
             </div>
-            <div class="pipeline-note">Runs automatically at container start · fetches latest data from Yahoo Finance</div>
+            <div class="pipeline-note">Historical CSV snapshot; model output computed before publication; no live data refresh</div>
           </div>
 
           <div class="card-block">
@@ -456,9 +461,9 @@
                 <tr><th>Asset</th><th>Source</th><th>Format</th><th>Update Frequency</th></tr>
               </thead>
               <tbody>
-                <tr><td class="td-accent td-mono">MSFT</td><td>Yahoo Finance (yfinance API)</td><td>CSV / DataFrame</td><td>Daily · post-close 16:00 ET · model target + display</td></tr>
-                <tr><td class="td-accent td-mono">NVDA</td><td>Yahoo Finance (yfinance API)</td><td>CSV / DataFrame</td><td>Daily · post-close 16:00 ET · peer model features + display</td></tr>
-                <tr><td class="td-accent td-mono">AMZN</td><td>Yahoo Finance (yfinance API)</td><td>CSV / DataFrame</td><td>Daily · post-close 16:00 ET · peer model features + display</td></tr>
+                <tr><td class="td-accent td-mono">MSFT</td><td>Yahoo Finance (yfinance API)</td><td>CSV / DataFrame</td><td>Historical snapshot; model target + display</td></tr>
+                <tr><td class="td-accent td-mono">NVDA</td><td>Yahoo Finance (yfinance API)</td><td>CSV / DataFrame</td><td>Historical snapshot; peer model features + display</td></tr>
+                <tr><td class="td-accent td-mono">AMZN</td><td>Yahoo Finance (yfinance API)</td><td>CSV / DataFrame</td><td>Historical snapshot; peer model features + display</td></tr>
               </tbody>
             </table>
           </div>
@@ -466,7 +471,7 @@
           <div class="team-credits">
             <div>
               <div class="team-built-label">Built by</div>
-              <div class="team-name">Group 15 · Block D 2025–2026</div>
+              <div class="team-name">Group project · Block D 2025–2026</div>
               <div class="team-org">Breda University of Applied Sciences · Data Science &amp; AI</div>
             </div>
           </div>
@@ -560,6 +565,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=47"></script>
+  <!-- MSFT_RUNTIME -->
+  <script src="./static/app.js"></script>
 </body>
 </html>

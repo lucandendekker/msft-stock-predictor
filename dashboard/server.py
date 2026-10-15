@@ -20,6 +20,7 @@ Endpoints:
 
 import os
 import sqlite3
+from contextlib import closing
 import logging
 from pathlib import Path
 
@@ -28,6 +29,8 @@ import pandas as pd
 import joblib
 from flask import Flask, jsonify, send_from_directory, request
 from flask_cors import CORS
+from market_quote import latest_quote
+from live_data import LiveData
 
 # ── Paths ────────────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).parent.parent  # project root
@@ -38,6 +41,23 @@ MODEL_PATH = (
 STATIC_DIR = Path(__file__).parent / "static"
 
 app = Flask(__name__, static_folder=str(STATIC_DIR))
+app.config['AUTO_REFRESH'] = os.environ.get('MSFT_AUTO_REFRESH', '1') == '1'
+if app.config['AUTO_REFRESH']:
+    DB_PATH = BASE_DIR / 'db' / 'stocks-live.db'
+live = LiveData(DB_PATH)
+
+
+@app.before_request
+def refresh_market_data():
+    if app.config['AUTO_REFRESH'] and request.path.startswith('/api/') and request.path != '/api/stock/quote':
+        state = live.ensure()
+        if not state.get('data_through'):
+            return jsonify(status='error', message=state.get('refresh_error', 'Market data is not ready yet.')), 503
+
+
+@app.route('/api/status')
+def data_status():
+    return jsonify(status='ok', data=live.state if app.config['AUTO_REFRESH'] else {'mode': 'historical'})
 CORS(app)
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s  %(message)s")
@@ -186,7 +206,11 @@ def build_weekly_features(conn, n_daily_rows: int = 400) -> pd.DataFrame:
 
 @app.route("/")
 def index():
-    return send_from_directory(str(STATIC_DIR), "index.html")
+    import json
+    body = (STATIC_DIR / 'index.html').read_text(encoding='utf-8')
+    config = json.dumps({'apiBase': request.script_root, 'automatic': app.config['AUTO_REFRESH']}).replace('<', '\\u003c')
+    body = body.replace('<!-- MSFT_RUNTIME -->', f'<script>window.MSFT_RUNTIME={config};window.MSFT_API_BASE=window.MSFT_RUNTIME.apiBase;</script>')
+    return app.response_class(body, mimetype='text/html')
 
 
 @app.route("/static/<path:filename>")
@@ -210,6 +234,7 @@ def stock_history():
             LEFT JOIN vix_data    v ON m.date = v.date
             LEFT JOIN nvda_daily  n ON m.date = n.date
             LEFT JOIN amzn_daily  a ON m.date = a.date
+            WHERE m.open > 0 AND m.high > 0 AND m.low > 0 AND m.close > 0
             ORDER BY m.date DESC LIMIT {days}
         """,
             conn,
@@ -237,6 +262,19 @@ def stock_latest():
         return jsonify({"status": "error", "message": "Geen data gevonden"}), 404
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@app.route('/api/stock/quote')
+def stock_quote():
+    try:
+        response = jsonify(latest_quote())
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except Exception:
+        logger.exception('Market quote unavailable')
+        response = jsonify(status='error', message='Market data is temporarily unavailable.')
+        response.headers['Cache-Control'] = 'no-store'
+        return response, 503
 
 
 @app.route("/api/indicators/latest")
@@ -302,8 +340,7 @@ def prediction_latest():
         ]
         if "predictions" in tables:
             row = conn.execute(
-                "SELECT p.*, (SELECT close FROM msft_daily ORDER BY date DESC LIMIT 1) as close "
-                "FROM predictions p "
+                "SELECT p.*, (SELECT m.close FROM msft_daily m WHERE m.date<=p.date ORDER BY m.date DESC LIMIT 1) as close FROM predictions p "
                 "ORDER BY p.date DESC LIMIT 1"
             ).fetchone()
             if row:
@@ -320,6 +357,11 @@ def prediction_latest():
                             "probability": round(row["confidence"] * 100, 1),
                             "close": row["close"],
                             "model_name": row["model_used"],
+                            "forecast_week_start": str((pd.Timestamp(row['date']) + pd.Timedelta(days=3)).date()),
+                            "forecast_week_end": str((pd.Timestamp(row['date']) + pd.Timedelta(days=7)).date()),
+                            "data_through": live.state.get('data_through') if app.config['AUTO_REFRESH'] else None,
+                            "updated_at": live.state.get('updated_at') if app.config['AUTO_REFRESH'] else None,
+                            "stale": live.state.get('stale', False) if app.config['AUTO_REFRESH'] else False,
                         },
                     }
                 )
@@ -420,14 +462,14 @@ def prediction_history():
     """Return recorded predictions only, without synthetic performance history."""
     n = max(1, min(request.args.get("n", 10, type=int), 100))
     try:
-        with get_conn() as conn:
+        with closing(get_conn()) as conn:
             exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='predictions'").fetchone()
             if not exists:
                 return jsonify(status="ok", data=[], accuracy=None, has_dummy=False)
-            records = conn.execute("SELECT date, predicted_direction, confidence, actual_direction FROM predictions ORDER BY date DESC LIMIT ?", (n,)).fetchall()
+            records = conn.execute("SELECT p.date, p.predicted_direction, p.confidence, p.actual_direction, (SELECT m.close FROM msft_daily m WHERE m.date<=p.date ORDER BY m.date DESC LIMIT 1) as close FROM predictions p ORDER BY p.date DESC LIMIT ?", (n,)).fetchall()
         rows = [{"date": row["date"], "predicted_direction": row["predicted_direction"],
                  "confidence": round(row["confidence"] * 100, 1), "actual_direction": row["actual_direction"],
-                 "correct": None, "close": None, "is_dummy": False} for row in records]
+                 "correct": None if row["actual_direction"] is None else row["predicted_direction"] == row["actual_direction"], "close": row["close"], "is_dummy": False} for row in records]
         return jsonify(status="ok", data=rows, accuracy=None, has_dummy=False)
     except Exception:
         logger.exception("Could not read prediction history")

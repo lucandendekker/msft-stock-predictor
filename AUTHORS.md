@@ -1,4 +1,4 @@
-# Group 15
+# Project team
 
 This application and its school project were developed collaboratively at Breda University of Applied Sciences:
 

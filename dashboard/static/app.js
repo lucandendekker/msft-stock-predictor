@@ -576,8 +576,44 @@ const CURRENCY_SYMBOLS = { USD: '$', EUR: '€', GBP: '£', JPY: '¥' };
 const FALLBACK_RATES = { USD: 1, EUR: 0.92, GBP: 0.79, JPY: 157 };
 let exchangeRates = { ...FALLBACK_RATES };
 let baseCloseUSD  = null;
+let latestMarketQuote = null;
+
+function renderMarketQuote() {
+  const value = document.getElementById('tile-close');
+  const sub = document.getElementById('tile-close-sub');
+  if (!value || !sub) return;
+  if (!latestMarketQuote) {
+    value.textContent = 'Unavailable';
+    sub.textContent = 'Could not load the latest quote. Retrying automatically.';
+    return;
+  }
+  const quote = latestMarketQuote;
+  const currency = appSettings.currency || 'USD';
+  const rate = exchangeRates[currency] || 1;
+  value.textContent = `${CURRENCY_SYMBOLS[currency] || '$'}${(quote.price * rate).toFixed(currency === 'JPY' ? 0 : 2)}`;
+  const time = new Date(quote.as_of).toLocaleString('en-US', { timeZone: quote.exchange_timezone, month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+  const percent = `${quote.change_percent >= 0 ? '+' : ''}${quote.change_percent.toFixed(2)}%`;
+  sub.textContent = `${time} ET · ${percent} vs previous close · Yahoo Finance${currency !== 'USD' ? ' · illustrative conversion' : ''}`;
+}
+
+async function refreshMarketQuote() {
+  try {
+    const response = await fetch(`${window.MSFT_API_BASE || ''}/api/stock/quote`, { cache: 'no-store', signal: AbortSignal.timeout(10000) });
+    if (!response.ok) throw new Error('Quote unavailable');
+    const result = await response.json();
+    if (result.status !== 'ok') throw new Error('Quote unavailable');
+    latestMarketQuote = result.data;
+    renderMarketQuote();
+  } catch {
+    if (latestMarketQuote) {
+      renderMarketQuote();
+      document.getElementById('tile-close-sub').textContent += ' · refresh failed; last received quote';
+    } else renderMarketQuote();
+  }
+}
 
 async function fetchExchangeRates() {
+  if (window.MSFT_STATIC) return;
   try {
     const res  = await fetch('https://api.frankfurter.app/latest?from=USD&to=EUR,GBP,JPY');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1211,11 +1247,11 @@ function renderPredictionHistory(res) {
         ${res.data.map(r => `
           <tr>
             <td>${r.date}</td>
-            <td>$${r.close.toFixed(2)}</td>
+            <td>${Number.isFinite(r.close) ? '$' + r.close.toFixed(2) : '–'}</td>
             <td>${dir(r.predicted_direction)} ${r.is_dummy ? '<span class="ph-dummy">(est.)</span>' : ''}</td>
             <td class="ph-conf">${r.confidence}%</td>
-            <td>${dir(r.actual_direction)}</td>
-            <td><span class="ph-badge ${r.correct === null ? 'neutral' : (r.correct ? 'correct' : 'incorrect')}">${r.correct === null ? '– Same' : (r.correct ? '● Correct' : '● Wrong')}</span></td>
+            <td>${r.actual_direction == null ? 'Not evaluated' : dir(r.actual_direction)}</td>
+            <td><span class="ph-badge ${r.correct === null ? 'neutral' : (r.correct ? 'correct' : 'incorrect')}">${r.correct === null ? 'Not evaluated' : (r.correct ? '● Correct' : '● Wrong')}</span></td>
           </tr>`).join('')}
       </tbody>
     </table>`;
@@ -1588,53 +1624,12 @@ function renderOverlayToggles() {
 }
 
 // ── Page 3 — Confusion matrix (3×3) ───────────────────────────────────────────
-function renderConfusionMatrix() {
-  const svg = clearSvg('svg-confusion');
-  if (!svg) return;
+function renderConfusionMatrix() { /* Per-class test predictions were not archived. */ }
 
-  // Rows = actual, cols = predicted. Labels: 0=DOWN, 1=UP, 2=SAME
-  // XGBoost Weekly · 48 test weeks · diagonal sum = 19 · total = 48
-  const matrix = [
-    [ 6, 5, 5],  // actual DOWN  (16 total)
-    [ 5, 8, 7],  // actual UP    (20 total)
-    [ 3, 4, 5],  // actual SAME  (12 total)
-  ];
-  const labels = ['DOWN', 'UP', 'SAME'];
-  const cW = 96, cH = 72, ox = 90, oy = 44;
-
-  svgText(svg, ox + cW * 1.5, 14, 'PREDICTED', { anchor:'middle', mono:true });
-  labels.forEach((lbl, i) => {
-    svgText(svg, ox + i * cW + cW / 2, 32, lbl, { anchor:'middle', fill:C.textMuted, size:'10' });
-    svgText(svg, ox - 8, oy + i * cH + cH / 2 + 4, lbl, { anchor:'end', fill:C.textMuted, size:'10' });
-  });
-  svgText(svg, 12, oy + cH * 1.5, 'ACTUAL', { mono:true });
-
-  matrix.forEach((row, cy) => {
-    row.forEach((v, cx) => {
-      const isDiag = cx === cy;
-      const rx = ox + cx * cW, ry = oy + cy * cH;
-      svg.append(svgEl('rect', { x:rx, y:ry, width:cW-2, height:cH-2,
-        fill: isDiag ? C.accent : C.amber,
-        'fill-opacity': isDiag ? (0.5 + v / 30) : 0.25 + v / 40,
-        stroke: C.lineSoft }));
-      const t = svgEl('text', { x:rx+cW/2, y:ry+cH/2+6, 'text-anchor':'middle',
-        fill: isDiag ? '#fff' : '#232528',
-        'font-size':'20', 'font-weight':'700', 'font-family':SANS });
-      t.textContent = v; svg.append(t);
-    });
-  });
-}
-
-// ── Page 3 — Model comparison ──────────────────────────────────────────────────
 function renderModelCompare() {
   const svg = clearSvg('svg-model-compare');
   if (!svg) return;
-  const models = [
-    { name:'Naive Bayes',     f1: 0.31 },
-    { name:'ARIMA',           f1: 0.33 },
-    { name:'Random Forest',   f1: MODEL_METRICS.rf_weekly.f1 },
-    { name:'XGBoost Weekly',  f1: MODEL_METRICS.xgb_weekly.f1, ens:true },
-  ];
+  const models = [{ name:'XGBoost Weekly', f1: MODEL_METRICS.xgb_weekly.f1, ens:true }];
   const W=560, H=220, padL=110, padR=40, padT=20, padB=36;
   const gap = 10;
   const bh  = (H - padT - padB - gap * (models.length - 1)) / models.length;
@@ -1740,12 +1735,8 @@ function renderKPIs(latest, prev) {
     const pct   = (delta / prev.close * 100).toFixed(2);
     subEl.textContent = `${latest.date?.slice(0,10) ?? ''} · ${delta>=0?'+':''}${pct}%`;
   }
-  const nextTradingDay = (() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
-    return d;
-  })();
+  renderMarketQuote();
+  const nextTradingDay = new Date(`${lastPrediction?.date || latest.date}T12:00:00`);
   if (dateEl) {
     dateEl.textContent = nextTradingDay.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric', year:'numeric' });
   }
@@ -1753,8 +1744,10 @@ function renderKPIs(latest, prev) {
   if (dateLabel) {
     const label = nextTradingDay.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const weekNr = (() => { const d = new Date(nextTradingDay); d.setHours(0,0,0,0); d.setDate(d.getDate()+3-(d.getDay()+6)%7); const w = new Date(d.getFullYear(),0,4); return 'W'+String(1+Math.round(((d-w)/86400000-3+(w.getDay()+6)%7)/7)).padStart(2,'0'); })();
-    dateLabel.textContent = `MSFT · Next week · ${weekNr} · ${label}`;
+    dateLabel.textContent = `MSFT · Features through ${label}`;
   }
+  const forecastLabel = document.getElementById('forecast-week-label');
+  if (forecastLabel) forecastLabel.textContent = lastPrediction?.forecast_week_start ? `Forecast: ${lastPrediction.forecast_week_start} to ${lastPrediction.forecast_week_end}` : 'Following trading week';
 }
 
 // ── Page 3 — Metrics ───────────────────────────────────────────────────────────
@@ -1893,16 +1886,16 @@ function openPredDetails() {
         <div class="pred-detail-val" style="color:${color}">${conf !== null ? conf.toFixed(1) + '%' : '–'}</div>
       </div>
       <div class="pred-detail-meta">
-        <div class="pred-detail-label">Prediction date</div>
-        <div class="pred-detail-val">${(() => { const d = new Date(); d.setDate(d.getDate()+1); while(d.getDay()===0||d.getDay()===6) d.setDate(d.getDate()+1); return d.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'}); })()}</div>
+        <div class="pred-detail-label">Feature week ending</div>
+        <div class="pred-detail-val">${p?.date ? new Date(p.date + 'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'}) : '–'}</div>
       </div>
     </div>`;
 
   document.getElementById('pred-detail-info').innerHTML = `
     <div class="pred-detail-row"><span class="pred-detail-key">Model</span><span class="pred-detail-val2">${p?.model_name ?? 'Random Forest Weekly'}</span></div>
     <div class="pred-detail-row"><span class="pred-detail-key">Features</span><span class="pred-detail-val2">20 technical + peer (MSFT · NVDA · AMZN)</span></div>
-    <div class="pred-detail-row"><span class="pred-detail-key">Training data</span><span class="pred-detail-val2">2015 – 2025 · weekly bars</span></div>
-    <div class="pred-detail-row"><span class="pred-detail-key">Test accuracy</span><span class="pred-detail-val2">39.58% (19/48 weeks)</span></div>
+    <div class="pred-detail-row"><span class="pred-detail-key">Forecast horizon</span><span class="pred-detail-val2">Following trading week, relative to the snapshot</span></div>
+    <div class="pred-detail-row"><span class="pred-detail-key">Test accuracy</span><span class="pred-detail-val2">39.58% (archived evaluation)</span></div>
     <div class="pred-detail-row"><span class="pred-detail-key">Last close</span><span class="pred-detail-val2">${p ? `${CURRENCY_SYMBOLS[appSettings.currency] || '$'}${((p.close ?? 0) * (exchangeRates[appSettings.currency] || 1)).toFixed(appSettings.currency === 'JPY' ? 0 : 2)}` : '–'}</span></div>`;
 
   overlay.classList.add('settings-open');
@@ -1987,9 +1980,26 @@ function triggerDownload(blob, filename) {
 }
 
 // ── API client ─────────────────────────────────────────────────────────────────
-const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:5000' : '';
+const API_BASE = window.MSFT_API_BASE || (window.location.protocol === 'file:' ? 'http://localhost:5000' : '');
+let staticSnapshotPromise;
 
 async function apiFetch(path) {
+  if (window.MSFT_STATIC) {
+    if (!staticSnapshotPromise) {
+      staticSnapshotPromise = fetch(new URL('./data/snapshot.json', document.baseURI)).then(response => {
+        if (!response.ok) throw new Error(`Snapshot HTTP ${response.status}`);
+        return response.json();
+      }).catch(error => { staticSnapshotPromise = null; throw error; });
+    }
+    const snapshot = await staticSnapshotPromise;
+    const url = new URL(path, 'https://snapshot.local');
+    const value = snapshot[url.pathname];
+    if (!value) throw new Error(`No snapshot for ${url.pathname}`);
+    const result = JSON.parse(JSON.stringify(value));
+    const limit = Number(url.searchParams.get('days') || url.searchParams.get('n'));
+    if (Number.isInteger(limit) && limit > 0 && Array.isArray(result.data)) result.data = result.data.slice(-limit);
+    return result;
+  }
   const sep = path.includes('?') ? '&' : '?';
   const res = await fetch(`${API_BASE}${path}${sep}_=${Date.now()}`);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -1999,14 +2009,14 @@ async function apiFetch(path) {
 // ── Init ───────────────────────────────────────────────────────────────────────
 function initTheme() {
   const btn = document.getElementById('theme-toggle');
-  const saved = localStorage.getItem('theme') ?? 'light';
+  const saved = new URLSearchParams(location.search).get('theme') === 'light' ? 'light' : 'dark';
   document.documentElement.dataset.theme = saved;
   btn.textContent = saved === 'dark' ? '☀' : '☾';
 
   btn?.addEventListener('click', () => {
     const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
     document.documentElement.dataset.theme = next;
-    localStorage.setItem('theme', next);
+    localStorage.setItem('msft-dashboard-theme', next);
     btn.textContent = next === 'dark' ? '☀' : '☾';
     // Re-read CSS vars and re-render all SVG charts
     C = getColors();
@@ -2037,7 +2047,13 @@ async function init() {
     apiFetch('/api/model/metrics').catch(() => null),
   ]);
 
-  const data = histRes?.data?.length ? histRes.data : SAMPLE_HISTORY;
+  const data = histRes?.data || [];
+  if (!histRes?.data?.length || !predRes?.data) {
+    const notice = document.querySelector('.portfolio-demo-note');
+    if (notice) notice.textContent = 'Market data and model output are not ready yet. Refresh the page to try again; the first update may take a moment.';
+    refreshMarketQuote();
+    return;
+  }
   lastPrediction = predRes?.data ?? null;
   renderAll(data, predRes?.data, metricsRes?.data);
 
@@ -2047,6 +2063,34 @@ async function init() {
   initHistoryInteraction();
   document.getElementById('btn-pred-details')?.addEventListener('click', openPredDetails);
   initCsvModal();
+  refreshForecastStatus();
+  refreshMarketQuote();
+  setInterval(() => { if (!document.hidden) refreshMarketQuote(); }, 60000);
+  setInterval(() => { if (!document.hidden) refreshForecastStatus(true); }, 300000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshMarketQuote(); });
+}
+
+async function refreshForecastStatus(reload = false) {
+  if (window.MSFT_STATIC) return;
+  try {
+    const status = await apiFetch('/api/status');
+    const state = status.data;
+    const notice = document.getElementById('data-freshness');
+    if (!state || !notice) return;
+    if (state.mode !== 'automatic') { notice.textContent = 'Archived model and historical dataset. The market quote is updated separately.'; return; }
+    notice.textContent = `Daily prices through ${state.data_through}. Forecast week: ${state.forecast_week_start} to ${state.forecast_week_end}. ${state.stale ? 'Refresh failed: displayed model data is stale.' : 'Recalculated after new completed market sessions; this estimates direction, not a price.'}`;
+    if (reload && state.updated_at !== lastPrediction?.updated_at) {
+      const [history, prediction, metrics] = await Promise.all([apiFetch('/api/stock/history?days=9999'), apiFetch('/api/prediction/latest'), apiFetch('/api/model/metrics')]);
+      if (history.data?.length && prediction.data) {
+        lastPrediction = prediction.data;
+        renderAll(history.data, prediction.data, metrics.data);
+        setActiveModel(lastPrediction.model_name);
+      }
+    }
+  } catch {
+    const notice = document.getElementById('data-freshness');
+    if (notice) notice.textContent = 'Could not verify the latest model-data refresh. Check the displayed data dates.';
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);
