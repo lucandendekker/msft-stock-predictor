@@ -6,7 +6,7 @@ Target: `Lucan5533/msft-stock-predictor`, created with Gradio -> Blank and the a
 python tools/package_space.py --output upload
 ```
 
-Upload the contents of the generated folder at the Space root: `app.py`, `README.md`, `requirements.txt`, `packages.txt`, `AUTHORS.md` and the entire `dashboard/` directory. The generated README selects Gradio 6.30.0 and Python 3.12. The app uses CPU inference for the small XGBoost model; the example Torch tensor and GPU decorator are not required by this application.
+Upload the contents of the generated folder at the Space root: `app.py`, `README.md`, `requirements.txt`, `packages.txt`, `AUTHORS.md` and the entire `dashboard/` directory. The generated README selects Gradio 6.30.0 and Python 3.12. The app registers a spaces.GPU function that runs XGBoost CUDA inference. The forecast update runs on Gradio page load and via the Update button. Local development uses CPU inference.
 
 The Gradio interface embeds the original dashboard at `/dashboard/`. Its Flask API is mounted below that path, with browser requests using the correct prefix. This keeps the original charts, theme toggle, filters and CSV downloads.
 

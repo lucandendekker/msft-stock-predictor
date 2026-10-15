@@ -40,7 +40,7 @@ After waking from sleep, the first refresh may take a moment. Provider failures 
 
 The model uses the latest completed weekly features and estimates the following week's direction: DOWN, UP or SAME. The forecast week and feature date are displayed. It does not predict an exact future stock price, retrain itself, or guarantee a correct direction.
 
-The app uses CPU inference for its small XGBoost model. No CUDA tensor or GPU decorator is needed. The selected ZeroGPU hardware is configured through Hugging Face settings.
+On ZeroGPU, the update action runs the saved XGBoost tree ensemble on an allocated CUDA GPU through spaces.GPU. It runs when the Gradio app loads and when Update is pressed. Daily data and the embedded API are cached; local development uses CPU inference. GPU quota or provider errors are shown rather than silently claiming a successful update.
 
 ## Team
 
